@@ -10,6 +10,12 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for current direction and
   plans, so the OpenAI picker row and `model: gpt-6.1-sol` on a `multi-openai`
   worker run it in place of the previous-generation `gpt-6-sol`. The default
   OpenAI model stays `gpt-6-astra`.
+- **Default OpenAI workers to GPT-6.1 Sol.** Codex now lists `gpt-6.1-sol`
+  first, so a `multi-openai` worker that names no model runs it, and it leads
+  the OpenAI picker rows. `gpt-6-astra` stays selectable.
+- **Add MiniMax M3 to Zen.** `multi/zen/minimax-m3` (open-weight, text only) is
+  selectable; the default Zen picker is unchanged. The `MULTI_CURSOR_EXTRA_MODELS`
+  help text now names Grok 4.7, the Cursor row the picker already shows.
 - **Deliver native worker reports in Auto mode.** Cursor, Antigravity, and Grok
   workers now send their final report through Claude Code's `SubagentHandback`
   tool when it is offered. Display rows keep their follow-up answer, and resumed
