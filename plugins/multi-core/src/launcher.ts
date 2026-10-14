@@ -1294,9 +1294,7 @@ async function discoverAntigravity() {
       resolveExecutable('agy');
       antigravityModels = await discoverAntigravityModels();
     } catch (error) {
-      if (!isMissingExecutable(error)) {
-        throw error;
-      }
+      // A missing or signed-out agy removes Antigravity rows; it never blocks other providers.
       console.error(
         `Antigravity choices unavailable: ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -1316,9 +1314,6 @@ async function discoverGrok(): Promise<GrokModel[]> {
     resolveExecutable('grok');
     return await discoverGrokModels();
   } catch (error) {
-    if (!isMissingExecutable(error)) {
-      throw error;
-    }
     // Silent when the plugin is merely present: only an enabled provider reports.
     if (enabledProviders?.includes('grok')) {
       console.error(
@@ -1327,10 +1322,6 @@ async function discoverGrok(): Promise<GrokModel[]> {
     }
     return [];
   }
-}
-
-function isMissingExecutable(error: unknown): boolean {
-  return recordValue(error)?.code === 'ENOENT';
 }
 
 async function findPluginRoot(file: string): Promise<string> {

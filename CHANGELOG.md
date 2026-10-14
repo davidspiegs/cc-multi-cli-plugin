@@ -10,6 +10,14 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for current direction and
   plans, so the OpenAI picker row and `model: gpt-6.1-sol` on a `multi-openai`
   worker run it in place of the previous-generation `gpt-6-sol`. The default
   OpenAI model stays `gpt-6-astra`.
+- **Start despite one malformed plugin agent or a signed-out CLI** ([#45](https://github.com/greenpolo/cc-multi-cli-plugin/issues/45)).
+  A plugin agent whose frontmatter is not strict YAML, such as an unquoted `: `
+  in its description, is reparsed with its plain values quoted, as Claude Code
+  accepts it. One that still cannot be read is reported once and refuses only
+  native workers of its own type; it no longer disables every plugin worker and
+  native harness. An enabled Antigravity or Grok CLI that cannot list models
+  (for example, not signed in) now removes only its own rows instead of
+  stopping the launch.
 - **Default OpenAI workers to GPT-6.1 Sol.** Codex now lists `gpt-6.1-sol`
   first, so a `multi-openai` worker that names no model runs it, and it leads
   the OpenAI picker rows. `gpt-6-astra` stays selectable.
