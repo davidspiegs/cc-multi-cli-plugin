@@ -161,6 +161,10 @@ test('setup preserves shell content, is repeatable, and uninstall survives plugi
   const reply = JSON.parse((await f.invoke('claude-multi', ['hello world'])).stdout);
   assert.deepEqual(reply, { native: true, args: ['hello world'] });
   await f.invoke('multi', ['uninstall']);
+  await assert.rejects(
+    access(path.join(f.home, '.local/share/gateway/terminal-resize.ts')),
+    /ENOENT/,
+  );
   const original = f.windows
     ? '# user settings\r\n'
     : '# user settings\nexport EXISTING=retained\n';

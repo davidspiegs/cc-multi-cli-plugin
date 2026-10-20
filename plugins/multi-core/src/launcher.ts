@@ -79,6 +79,7 @@ import type { ProviderUsageReader } from './gateway/provider-usage.ts';
 import { ReceiptLedger } from './gateway/receipts.ts';
 import type { GatewayEvent } from './gateway/server.ts';
 import { createNativeGateway } from './gateway/server.ts';
+import { forwardTerminalResize } from './gateway/terminal-resize.ts';
 import {
   buildWorkerCatalog,
   type WorkerCatalog,
@@ -314,6 +315,7 @@ async function main() {
     detached: process.platform !== 'win32',
     ...childInvocation.options,
   });
+  forwardTerminalResize(child);
   const shutdown = async () => {
     server.closeAllConnections();
     server.close();

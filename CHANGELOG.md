@@ -6,6 +6,10 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for current direction and
 
 ## Unreleased
 
+- **Refresh the terminal UI after resizing.** Unix launchers now forward terminal
+  resize signals to the attached Claude child, including during startup and
+  through the installed wrapper. Detached process groups and cancellation
+  behavior remain unchanged; resize listeners are removed when the child exits.
 - **Keep valid plugin agents when a neighbor has malformed metadata.** The
   launcher now warns about the affected file and retains the remaining plugin
   inventory. Unreadable agent permissions block external harness execution for

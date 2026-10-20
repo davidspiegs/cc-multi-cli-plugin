@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { executableInvocation, UnsafeCommandArgumentError } from '../gateway/executable.ts';
 import { terminateProcessTree } from '../gateway/process-tree.ts';
+import { forwardTerminalResize } from '../gateway/terminal-resize.ts';
 
 export interface RunOptions {
   platform?: NodeJS.Platform;
@@ -22,6 +23,7 @@ export async function run(
     detached: platform !== 'win32',
     ...invocation.options,
   });
+  forwardTerminalResize(child, { platform });
   const terminate = () => {
     if (child.pid) {
       terminateProcessTree(child.pid, { platform });

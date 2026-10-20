@@ -329,7 +329,7 @@ async function writeRuntime(
   }
   const gatewayDirectory = path.join(directory, '..', 'gateway');
   await mkdir(gatewayDirectory, { recursive: true });
-  for (const file of ['executable.ts', 'process-tree.ts']) {
+  for (const file of ['executable.ts', 'process-tree.ts', 'terminal-resize.ts']) {
     const origin = fileURLToPath(new URL(`../gateway/${file}`, import.meta.url));
     await copyFile(origin, path.join(gatewayDirectory, file));
   }
@@ -460,6 +460,7 @@ export async function uninstall(
     'state.json',
     '../gateway/executable.ts',
     '../gateway/process-tree.ts',
+    '../gateway/terminal-resize.ts',
     ...immediate.map((file) => path.relative(directory, file)),
   ]) {
     await rm(path.join(directory, file), { force: true });

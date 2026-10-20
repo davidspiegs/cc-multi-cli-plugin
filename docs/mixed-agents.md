@@ -13,8 +13,25 @@ Start `claude-multi` with a Claude model selected, then ask:
 > report its validation. Give it the relevant files, requirements, and constraints.
 
 The worker's `model` selects one of the OpenAI models advertised in its type
-description. Omitting it uses the OpenAI worker default. Its native tool calls
+description. With the default catalog, omitting it selects GPT-6 Astra,
+independently of the lead's model. If that model is excluded from the configured
+picker, the worker uses its advertised catalog default. Its native tool calls
 run through Claude Code and its final report returns to the lead.
+
+Changing the lead with `/model` does not change every worker:
+
+| Worker selection | Model used |
+| --- | --- |
+| An ordinary agent configured with `model: inherit` | Its parent's model |
+| An ordinary agent with a fixed model | Its configured model, subject to the host's selection rules |
+| `multi-openai`, with `model` omitted | Its advertised default, normally GPT-6 Astra |
+| `multi-openai`, with `model: gpt-6.1-sol` | GPT-6.1 Sol |
+| `multi-claude`, with `model` omitted | The configured native Claude model, Sonnet 5.5 by default |
+
+Start with `claude-multi`; `--model` is optional. In the session, `/model`
+opens the picker. Its `s` action selects a model for this session only;
+Enter also saves the selection in Claude's shared user settings. A saved
+external model still requires the Multi launcher for inference.
 
 ## GPT lead, Claude child
 
@@ -74,3 +91,5 @@ include relevant requirements, decisions, and file references in the handoff.
 Do not use `fork: true` to switch providers. A native full-context fork retains
 the parent's model and tool pool. Cross-provider delegation here uses ordinary
 native subagents, with their normal context and report handback semantics.
+
+For the current Desktop integration boundary, see [Desktop support](desktop.md).
