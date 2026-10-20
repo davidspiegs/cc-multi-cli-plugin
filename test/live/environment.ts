@@ -22,6 +22,9 @@ function environmentValue(name: string): string | undefined {
 export function isolatedEnvironment(overrides: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const environment: NodeJS.ProcessEnv = {
     PATH: environmentValue('PATH'),
+    // Claude's macOS Keychain lookup needs the OS username even with HOME set.
+    // Preserve this non-secret identity without inheriting provider credentials.
+    USER: environmentValue('USER'),
     // Quiet Claude without CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC, which
     // would also block the plugin worker's loopback call to the gateway.
     DISABLE_AUTOUPDATER: '1',

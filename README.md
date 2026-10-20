@@ -83,6 +83,8 @@ Linux, macOS, and Windows have platform-specific implementations and a CI matrix
 | Start here | Learn more |
 | --- | --- |
 | [Installation and account setup](docs/installation.md) | [Permissions and review](docs/permissions.md) |
+| [Authentication and subscriptions](docs/authentication.md) | [Native Claude/GPT mixed agents](docs/mixed-agents.md) |
+| [Claude and GPT lead/worker combinations](docs/mixed-agents.md) | Native tools, permissions, and context limits |
 | [OpenAI](docs/openai.md) · [Cursor](docs/cursor.md) | [Architecture and execution flow](ARCHITECTURE.md) |
 | [Claude Mods reference](docs/claude-mods.md) | Required integration boundary for Claude Code UI and extensibility |
 | [OpenCode Zen](docs/zen.md) · [Antigravity](docs/antigravity.md) · [Grok](docs/grok.md) | [Platform support and verification](docs/platform-support.md) |

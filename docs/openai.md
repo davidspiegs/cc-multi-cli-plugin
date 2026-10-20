@@ -36,6 +36,10 @@ change it. Workers appear as native subagent entries with model activity,
 elapsed time, progress, and completion status. Cancelling the Claude request
 aborts the OpenAI request and worker activity.
 
+Workers inherit Claude Code's native subagent tools, including available MCP
+tools, instead of a fixed six-tool list. The host's subagent tool filters and
+permission rules still apply. Custom agents retain their own tool restrictions.
+
 ## Instruction profile
 
 OpenAI requests append a short Claude Code compatibility note from

@@ -72,6 +72,13 @@ Effort is never part of a type or model name: OpenAI and Zen workers carry one
 provider-wide default effort, while Cursor, Antigravity, and Grok workers apply
 the session's `/effort`, validated by the provider.
 
+When Claude authentication is available, the launcher also registers
+`multi-claude`, an ordinary native agent outside the external provider catalog.
+It uses `sonnet` by default or the validated `MULTI_CLAUDE_MODEL` setting. This
+gives an external-model lead a discoverable Claude worker whose default does
+not inherit the lead's model. See [mixed agents](docs/mixed-agents.md) for the
+two delegation directions and native context limits.
+
 ## Execution contracts per provider
 
 | Provider | Tool execution | Review | State ownership | Authentication |
@@ -88,6 +95,13 @@ at Cursor, Antigravity, and Grok prompts, or when a direct-model conversation re
 a harness worker. OpenAI
 review stays with the originating OpenAI account. Zen never borrows Codex
 review. Missing GPT review fails explicitly.
+
+Generated OpenAI and Zen workers omit a `tools` allowlist and inherit Claude
+Code's effective native subagent tool pool, including MCP tools. Claude Code
+still applies foreground/background tool filtering, nesting limits, and the
+session's permission rules. Custom agent tool declarations remain in force;
+the launcher does not expand them. Harness workers keep their explicit tool
+allowlists for capability translation and display rows.
 
 Cursor, Antigravity and Grok are harness integrations. Their SDK or CLI executes
 tools, keeps native state, and applies provider authentication. Each finished native
@@ -133,6 +147,14 @@ provider capabilities, project settings, and platform policy. Unsupported modes,
 unknown workers, untranslatable policies, and unavailable required reviewers fail
 explicitly. Plan denies shell and edit capabilities. Bypass disables Cursor native
 Auto review while retaining explicit restrictions. See [docs/permissions.md](docs/permissions.md).
+
+Plugin agent permission metadata is read per file. A malformed or unreadable
+agent produces a warning and blocks external harness admission for its filename
+identity and any scalar declared names recovered from the document. A colliding
+valid definition or an intermediate native child cannot clear that block.
+Other agents and the core-plugin
+inventory remain available. Claude-loop registration stays observational, so
+Claude Code continues to own its native agent permissions and execution.
 
 Native harness actions do not enter Claude's PreToolUse or PermissionRequest
 admission path. Their worker admission loads the selected settings and managed

@@ -197,7 +197,13 @@ test('a gateway-originated row answers its native output, and a failed action as
 });
 
 const surfaces = ['terminal', 'desktop'] as const;
+type Surface = (typeof surfaces)[number];
 const idle = { isRunning: false, isErrored: false, isInterrupted: false };
+
+/** The desktop host resolves bold text to its semibold font weight. */
+function boldTextProps(surface: Surface) {
+  return surface === 'desktop' ? { bold: true, weight: 'semibold' } : { bold: true };
+}
 
 /**
  * Claude Code's own tool row, element for element, as captured from this build's
@@ -205,7 +211,7 @@ const idle = { isRunning: false, isErrored: false, isInterrupted: false };
  * `ESC[1mRead ESC[0m` then `(README.md)` in the text colour; an error row's dot is
  * `ESC[38;5;211m` (theme `error`).
  */
-function builtinHeader(name: string, argument: string, color = 'success') {
+function builtinHeader(surface: Surface, name: string, argument: string, color = 'success') {
   return {
     type: 'Box',
     props: { flexDirection: 'row' },
@@ -215,7 +221,7 @@ function builtinHeader(name: string, argument: string, color = 'success') {
         props: { minWidth: 2 },
         children: [{ type: 'Text', props: { color }, children: ['●'] }],
       },
-      { type: 'Text', props: { bold: true }, children: [name] },
+      { type: 'Text', props: boldTextProps(surface), children: [name] },
       { type: 'Text', children: [`(${argument})`] },
     ],
   };
@@ -240,10 +246,14 @@ function builtinResult(lines: unknown[]) {
   };
 }
 
-function counted(before: string, value: number, after: string) {
+function counted(surface: Surface, before: string, value: number, after: string) {
   return {
     type: 'Text',
-    children: [before, { type: 'Text', props: { bold: true }, children: [String(value)] }, after],
+    children: [
+      before,
+      { type: 'Text', props: boldTextProps(surface), children: [String(value)] },
+      after,
+    ],
   };
 }
 
@@ -253,6 +263,20 @@ function relabelled(tree: unknown, native: string, builtin: string): unknown {
 }
 
 type Mount = TestEngine;
+
+/**
+ * Newer hosts (observed in 2.1.302) tag the mounted root with its plugin owner.
+ * Assert that exact owner separately, then compare every visual field as before.
+ * Older supported hosts omit it; nested metadata is never stripped or ignored.
+ */
+function drawnContent(tree: unknown): unknown {
+  if (!tree || typeof tree !== 'object' || Array.isArray(tree) || !('part' in tree)) {
+    return tree;
+  }
+  const { part, ...content } = tree;
+  expect(part).toEqual({ plugin: 'multi-core' });
+  return content;
+}
 
 async function header(
   $: Mount,
@@ -276,7 +300,7 @@ async function header(
   const drawn = await row.drawn();
   expect(await row.find({ type: 'Text', text: /mcp__|multi_row|a{32}/ })).toBeUndefined();
   await row.unmount();
-  return drawn;
+  return drawnContent(drawn);
 }
 
 async function result(
@@ -300,7 +324,7 @@ async function result(
   });
   const drawn = await row.drawn();
   await row.unmount();
-  return drawn;
+  return drawnContent(drawn);
 }
 
 /** The engine beneath the mod: what it was asked to draw, and a stand-in for its drawing. */
@@ -323,14 +347,16 @@ test('an agy view_file row draws exactly as Claude draws Read, but for its name'
   };
   for (const surface of surfaces) {
     const drawn = await header($, surface, 'view_file', input);
-    expect(drawn).toEqual(builtinHeader('view_file', 'README.md'));
-    expect(relabelled(drawn, 'view_file', 'Read')).toEqual(builtinHeader('Read', 'README.md'));
+    expect(drawn).toEqual(builtinHeader(surface, 'view_file', 'README.md'));
+    expect(relabelled(drawn, 'view_file', 'Read')).toEqual(
+      builtinHeader(surface, 'Read', 'README.md'),
+    );
     // agy reports what it read as `2 lines, 6 bytes`; Read says `Read 2 lines`.
     expect(await result($, surface, 'view_file', '2 lines, 6 bytes')).toEqual(
-      builtinResult([counted('Read ', 2, ' lines')]),
+      builtinResult([counted(surface, 'Read ', 2, ' lines')]),
     );
     const ranged = await header($, surface, 'view_file', { ...input, offset: 1, limit: 5 });
-    expect(ranged).toEqual(builtinHeader('view_file', 'README.md · lines 1-5'));
+    expect(ranged).toEqual(builtinHeader(surface, 'view_file', 'README.md · lines 1-5'));
   }
 });
 
@@ -344,7 +370,9 @@ test('a shell row draws as Bash and leaves its output to the engine, compact and
       command: 'echo hi',
       native: { CommandLine: 'echo hi' },
     });
-    expect(relabelled(drawn, 'run_command', 'Bash')).toEqual(builtinHeader('Bash', 'echo hi'));
+    expect(relabelled(drawn, 'run_command', 'Bash')).toEqual(
+      builtinHeader(surface, 'Bash', 'echo hi'),
+    );
     expect(
       await result($, surface, 'run_command', 'hi\r\n<system-reminder>noise</system-reminder>'),
     ).toEqual({
@@ -366,11 +394,11 @@ test('a search row draws as Grep: its pattern and path, then what it found', asy
       native: { Query: 'TODO', SearchPath: '/workspace/src' },
     });
     expect(relabelled(drawn, 'grep_search', 'Grep')).toEqual(
-      builtinHeader('Grep', 'pattern: "TODO", path: "src"'),
+      builtinHeader(surface, 'Grep', 'pattern: "TODO", path: "src"'),
     );
     expect(
       await result($, surface, 'grep_search', 'src/a.ts:3:// TODO\nsrc/b.ts:9:// TODO\n'),
-    ).toEqual(builtinResult([counted('Found ', 2, ' lines')]));
+    ).toEqual(builtinResult([counted(surface, 'Found ', 2, ' lines')]));
   }
 });
 
@@ -386,7 +414,7 @@ test('a failed action draws as a failed built-in: error dot, `Error:` in the err
       native: { CommandLine: 'cat /nonexistent/file' },
     });
     expect(relabelled(drawn, 'run_command', 'Bash')).toEqual(
-      builtinHeader('Bash', 'cat /nonexistent/file', 'error'),
+      builtinHeader(surface, 'Bash', 'cat /nonexistent/file', 'error'),
     );
     expect(
       await result(
@@ -405,7 +433,7 @@ test('a failed action draws as a failed built-in: error dot, `Error:` in the err
       { ...idle, isErrored: true },
     );
     expect(relabelled(refused, 'shell', 'Bash')).toEqual(
-      builtinHeader('Bash', 'rm -rf /', 'error'),
+      builtinHeader(surface, 'Bash', 'rm -rf /', 'error'),
     );
     expect(await result($, surface, 'shell', 'Error: denied', true)).toEqual(
       builtinResult([text('Error: denied')]),
@@ -429,10 +457,10 @@ test('writes and edits draw as Write and Update do: counts, numbered preview, di
           type: 'Text',
           children: [
             'Wrote ',
-            { type: 'Text', props: { bold: true }, children: ['2'] },
+            { type: 'Text', props: boldTextProps(surface), children: ['2'] },
             ' lines',
             ' to ',
-            { type: 'Text', props: { bold: true }, children: ['new.txt'] },
+            { type: 'Text', props: boldTextProps(surface), children: ['new.txt'] },
           ],
         },
         ...['a', 'b'].map((line, index) => ({
@@ -544,7 +572,7 @@ test('a native tool with no built-in keeps its own argument and output', async (
     const drawn = await header($, surface, 'open_browser_url', {
       native: { Url: 'https://example.test' },
     });
-    expect(drawn).toEqual(builtinHeader('open_browser_url', 'https://example.test'));
+    expect(drawn).toEqual(builtinHeader(surface, 'open_browser_url', 'https://example.test'));
     expect(await result($, surface, 'open_browser_url', '')).toEqual({ type: 'engine', ref: 0 });
     expect(asked.at(-1)?.output).toEqual([{ type: 'text', text: '(No output)' }]);
   }
@@ -562,7 +590,7 @@ test('an action the run never confirmed draws neither green nor red, with an unc
       native: { TargetFile: '/workspace/a.ts' },
     });
     expect(relabelled(drawn, 'write_to_file', 'Write')).toEqual(
-      builtinHeader('Write', 'a.ts', 'inactive'),
+      builtinHeader(surface, 'Write', 'a.ts', 'inactive'),
     );
     expect(
       await result(

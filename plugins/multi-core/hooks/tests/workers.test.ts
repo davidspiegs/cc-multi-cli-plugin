@@ -377,6 +377,118 @@ test('a provider worker is refused when the gateway cannot resolve its model', a
   expect(started).toBe(false);
 });
 
+/** A bounded worker-model reply; no provider inference runs in these hook tests. */
+function nativeClaudeResolution(on: On, selection: unknown, status = 200) {
+  const sent: Array<Record<string, unknown>> = [];
+  on('env.get', (_$, event) => ({
+    value: event.name === 'MULTI_GATEWAY_TOKEN' ? 'token' : 'http://127.0.0.1:4000',
+  }));
+  on('session.id', () => ({ value: 's' }));
+  on('session.cwd', () => ({ value: '/workspace' }));
+  on('http.fetch', (_$, event) => {
+    sent.push(event.init?.body ? JSON.parse(String(event.init.body)) : {});
+    const resolving = event.url.endsWith('/multi/mod/worker-model');
+    const code = resolving ? status : 200;
+    return {
+      value: {
+        ok: code === 200,
+        status: code,
+        headers: {},
+        text: JSON.stringify(resolving ? selection : { accepted: true }),
+      },
+    };
+  });
+  return sent;
+}
+
+test('multi-claude forwards its resolved Claude model when a GPT parent omits event.model', async ($, on) => {
+  mock.clock(on);
+  const sent = nativeClaudeResolution(on, {
+    known: true,
+    execution: 'claude',
+    model: 'claude-sonnet-5-5',
+  });
+  const models: Array<string | undefined> = [];
+  on('agent.spawn', (_$, event) => {
+    models.push(event.model);
+    return { model: event.model ?? 'inherited-gpt', agentId: 'claude-child' };
+  });
+  const result = await $.agent.spawn({
+    prompt: 'Use native Read',
+    description: 'Claude task',
+    subagentType: 'multi-claude',
+    parentModel: 'multi/openai/gpt-6.1-sol',
+    tool_use_id: 'toolu_claude',
+  } as never);
+  expect(models).toEqual(['claude-sonnet-5-5']);
+  expect(result.model).toBe('claude-sonnet-5-5');
+  expect(result.agentId).toBe('claude-child');
+  expect(sent.at(-1)?.model).toBe('claude-sonnet-5-5');
+});
+
+for (const selection of [
+  { known: true, execution: 'claude', model: 'sonnet' },
+  { known: false, execution: 'claude', model: 'sonnet' },
+  { known: true, execution: 'claude', model: 'multi/openai/gpt-6.1-sol' },
+  { known: true, execution: 'harness', model: 'sonnet' },
+  { known: true, execution: 'claude', model: 'inherit' },
+  { known: true, execution: 'claude', model: 'gpt-6.1-sol' },
+]) {
+  test(`multi-claude refuses an unverified native model: ${JSON.stringify(selection)}`, async ($, on) => {
+    mock.clock(on);
+    nativeClaudeResolution(on, selection);
+    let started = false;
+    on('agent.spawn', () => {
+      started = true;
+      return { model: 'inherited-gpt', agentId: 'wrong' };
+    });
+    const result = await $.agent.spawn({
+      prompt: 'task',
+      subagentType: 'multi-claude',
+      parentModel: 'multi/openai/gpt-6.1-sol',
+    } as never);
+    expect(result.deny).toContain('requires a known native Claude model');
+    expect(started).toBe(false);
+  });
+}
+
+test('multi-claude refuses unavailable model resolution rather than inheriting GPT', async ($, on) => {
+  mock.clock(on);
+  nativeClaudeResolution(on, { error: 'model lookup unavailable' }, 503);
+  let started = false;
+  on('agent.spawn', () => {
+    started = true;
+    return { model: 'inherited-gpt', agentId: 'wrong' };
+  });
+  const result = await $.agent.spawn({
+    prompt: 'task',
+    subagentType: 'multi-claude',
+    parentModel: 'multi/openai/gpt-6.1-sol',
+  } as never);
+  expect(result.deny).toContain('model lookup unavailable');
+  expect(started).toBe(false);
+});
+
+test('multi-claude forks retain the native parent model semantics', async ($, on) => {
+  mock.clock(on);
+  const parentModel = 'multi/openai/gpt-6.1-sol';
+  nativeClaudeResolution(on, { known: true, execution: 'claude', model: parentModel });
+  const models: Array<string | undefined> = [];
+  on('agent.spawn', (_$, event) => {
+    models.push(event.model);
+    return { model: event.parentModel ?? 'missing', agentId: 'forked-child' };
+  });
+  const result = await $.agent.spawn({
+    prompt: 'task',
+    subagentType: 'multi-claude',
+    parentModel,
+    fork: true,
+  } as never);
+  expect(models).toEqual([undefined]);
+  expect(result.model).toBe(parentModel);
+  expect(result.agentId).toBe('forked-child');
+});
+
 const provider = { plugin: 'engine', tier: 'core' } as const;
 
 test('the Agent tool description names provider models only while a provider worker is offered', async ($, on) => {
@@ -396,9 +508,12 @@ test('the Agent tool description names provider models only while a provider wor
   expect(await describe()).toBe('Launch a new agent.');
   await offer('Explore');
   expect(await describe()).toBe('Launch a new agent.');
+  await offer('multi-claude');
+  expect(await describe()).toBe('Launch a new agent.');
   await offer('multi-cursor');
   const described = await describe();
-  expect(described).toContain('For a multi-* agent type');
+  expect(described).toContain('For an external provider agent type');
+  expect(described).toContain('multi-claude is a native Claude worker');
   expect(described.startsWith('Launch a new agent.')).toBe(true);
   // The offer is withdrawn (settings the harness cannot honour): the paragraph goes too.
   offered = false;

@@ -11,8 +11,9 @@
     "typecheck": "tsc --noEmit",
     "test": "npm run typecheck && node --test --test-timeout=120000 \"test/unit/**/*.test.ts\"",
     "test:e2e": "node --test --test-timeout=120000 \"test/e2e/**/*.test.ts\"",
-    "test:mod": "npm run typecheck:mod && node --input-type=module -e \"import { spawn } from 'node:child_process'; const child = spawn('claude', ['plugin', 'test', 'plugins/multi-core'], { stdio: 'inherit', env: { ...process.env, CLAUDE_INTERNAL_FC_OVERRIDES: JSON.stringify({ tengu_plugin_hooks_modules: true }) } }); child.on('exit', (code) => { process.exitCode = code ?? 1; });\"",
+    "test:mod": "npm run typecheck:mod && node --input-type=module -e \"import { spawn } from 'node:child_process'; const child = spawn(process.env.MULTI_REAL_CLAUDE || 'claude', ['plugin', 'test', 'plugins/multi-core'], { stdio: 'inherit', env: { ...process.env, CLAUDE_INTERNAL_FC_OVERRIDES: JSON.stringify({ tengu_plugin_hooks_modules: true }) } }); child.on('exit', (code) => { process.exitCode = code ?? 1; });\"",
     "test:live:compaction": "node test/live/native-compaction.ts",
+    "test:live:mixed": "node test/live/native-mixed-agents.ts",
     "test:live:zen": "node test/live/native-zen.ts",
     "test:live:cursor": "node test/live/native-cursor-harness.ts",
     "test:live:openai-instructions": "node test/live/native-openai-instructions.ts",
@@ -40,7 +41,7 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
-    "@cursor/sdk": "1.0.31",
+    "@cursor/sdk": "1.0.38",
     "js-tiktoken": "1.0.21",
     "yaml": "2.9.0"
   }

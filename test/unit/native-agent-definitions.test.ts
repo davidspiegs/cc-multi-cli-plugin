@@ -8,7 +8,9 @@ import {
   loadWorkerPermissions,
   pluginPermissions,
 } from '../../plugins/multi-core/src/gateway/agent-definitions.ts';
+import { PermissionModes } from '../../plugins/multi-core/src/gateway/mode-hook.ts';
 import { cursorPermissionPolicy } from '../../plugins/multi-cursor/src/permissions.ts';
+import { removeTemporary } from '../temporary.ts';
 
 async function writeAgent(directory: string, name: string, source: string) {
   const agents = path.join(directory, '.claude', 'agents');
@@ -129,7 +131,153 @@ test('discovers scoped plugin workers, manifest replacement paths and inherited 
   });
   assert.equal(definitions['fixture:ignored'], undefined);
   await writeFile(path.join(root, 'reader.md'), '---\ntools: [Read\n---\n');
-  await assert.rejects(loadWorkerPermissions(cwd, {}), /Malformed plugin agent/);
+  const malformed = await loadWorkerPermissions(cwd, {});
+  assert.match(malformed['fixture:reader'].nativePermissionError ?? '', /metadata is unavailable/);
+});
+
+async function pluginFixture(t: test.TestContext, sources: Record<string, string>) {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'plugin-metadata-'));
+  t.after(() => removeTemporary(root));
+  await mkdir(path.join(root, 'agents'));
+  await mkdir(path.join(root, 'core'));
+  for (const [name, source] of Object.entries(sources)) {
+    await writeFile(path.join(root, 'agents', name), source);
+  }
+  inventory = [
+    { id: 'fixture@test', enabled: true, installPath: root },
+    { id: 'multi-core@cc-multi-cli-plugin', enabled: true, installPath: path.join(root, 'core') },
+  ];
+  return root;
+}
+
+test('one malformed plugin agent preserves restrictive neighbors and cannot enter a harness', async (t) => {
+  const root = await pluginFixture(t, {
+    'reader.md': '---\nname: reader\ntools: [Read, Grep]\ndisallowedTools: [Bash, Write]\n---\n',
+    'broken.md':
+      '---\nname: renamed\ndescription: Inspect failures: report them\ntools: [Read]\n---\n',
+  });
+  const discovered = await pluginPermissions(root, []);
+  assert.equal(discovered.multiCoreEnabled, true);
+  assert.deepEqual(discovered.permissions['fixture:reader'], {
+    tools: ['Read', 'Grep'],
+    disallowedTools: ['Bash', 'Write'],
+  });
+  assert.equal(discovered.warnings?.length, 1);
+  assert.match(discovered.warnings?.[0] ?? '', /fixture:broken.*fixture:renamed/);
+  assert.doesNotMatch(discovered.warnings?.[0] ?? '', /fixture:reader/);
+
+  const modes = new PermissionModes(async () => discovered.permissions);
+  await modes.precompute(root);
+  const parentModel = 'multi/openai/gpt-6-astra';
+  modes.recordModSession('session', { cwd: root, model: parentModel, permissionMode: 'auto' });
+  const spawn = { cwd: root, parentModel, permissionMode: 'auto' };
+  for (const type of ['fixture:broken', 'fixture:renamed']) {
+    const definition = discovered.permissions[type];
+    assert.deepEqual(Object.keys(definition), ['nativePermissionError']);
+    assert.throws(
+      () => cursorPermissionPolicy({ ...definition, permissionMode: 'auto' }),
+      /metadata is unavailable/,
+    );
+    await assert.rejects(
+      modes.prepareModWorker('session', {
+        ...spawn,
+        subagentType: type,
+        model: 'multi/cursor/default',
+      }),
+      /metadata is unavailable/,
+    );
+    // Registration stays observational for the host's own Claude loop.
+    assert.equal(
+      typeof (await modes.prepareModWorker('session', {
+        ...spawn,
+        subagentType: type,
+        model: 'claude-sonnet-4-6',
+      })),
+      'string',
+    );
+  }
+  await assert.rejects(
+    modes.prepareModWorker('session', {
+      ...spawn,
+      subagentType: 'fixture:unknown',
+      model: 'multi/cursor/default',
+    }),
+    /Cannot resolve permissions/,
+  );
+  const token = await modes.prepareModWorker('session', {
+    ...spawn,
+    subagentType: 'fixture:reader',
+    model: 'multi/cursor/default',
+  });
+  modes.recordPreparedModWorker('session', 'reader', token);
+  const allowed = modes.resolveHarness('session', 'reader', 'multi/cursor/default');
+  assert.deepEqual(allowed.tools, ['Read', 'Grep']);
+  assert.deepEqual(allowed.disallowedTools, ['Bash', 'Write']);
+});
+
+test('a native descendant cannot clear malformed ancestor permissions before a harness spawn', async (t) => {
+  const root = await pluginFixture(t, {
+    'reader.md': '---\nname: reader\ntools: [Read, Grep]\ndisallowedTools: [Bash, Write]\n---\n',
+    'broken.md': '---\nname: broken\ndescription: Inspect failures: report them\n---\n',
+  });
+  const discovered = await pluginPermissions(root, []);
+  const modes = new PermissionModes(async () => discovered.permissions);
+  await modes.precompute(root);
+  const nativeModel = 'claude-sonnet-4-6';
+  modes.recordModSession('session', { cwd: root, model: nativeModel, permissionMode: 'auto' });
+  const spawn = { cwd: root, parentModel: nativeModel, permissionMode: 'auto' };
+  const broken = await modes.prepareModWorker('session', {
+    ...spawn,
+    subagentType: 'fixture:broken',
+    model: nativeModel,
+  });
+  modes.recordPreparedModWorker('session', 'broken', broken);
+  const reader = await modes.prepareModWorker('session', {
+    ...spawn,
+    parentAgentId: 'broken',
+    subagentType: 'fixture:reader',
+    model: nativeModel,
+  });
+  modes.recordPreparedModWorker('session', 'reader', reader);
+  await assert.rejects(
+    modes.prepareModWorker('session', {
+      ...spawn,
+      parentAgentId: 'reader',
+      subagentType: 'fixture:reader',
+      model: 'multi/cursor/default',
+    }),
+    /metadata is unavailable/,
+  );
+  const inherited = modes.resolve('session', 'reader');
+  assert.equal(
+    inherited.nativePermissionError,
+    discovered.permissions['fixture:broken'].nativePermissionError,
+  );
+  assert.deepEqual(inherited.tools, ['Read', 'Grep']);
+  assert.deepEqual(inherited.disallowedTools, ['Bash', 'Write']);
+});
+
+test('malformed aliases stay blocked regardless of neighboring definition order', async (t) => {
+  const root = await pluginFixture(t, {
+    'valid.md': '---\nname: reader\ntools: [Read]\ndisallowedTools: [Write]\n---\n',
+    'broken.md': '---\nname: reader\ndescription: Inspect failures: report them\n---\n',
+  });
+  await mkdir(path.join(root, '.claude-plugin'));
+  for (const agents of [
+    ['./agents/valid.md', './agents/broken.md'],
+    ['./agents/broken.md', './agents/valid.md'],
+  ]) {
+    await writeFile(path.join(root, '.claude-plugin', 'plugin.json'), JSON.stringify({ agents }));
+    const discovered = await pluginPermissions(root, []);
+    const reader = discovered.permissions['fixture:reader'];
+    assert.deepEqual(reader.tools, ['Read']);
+    assert.deepEqual(reader.disallowedTools, ['Write']);
+    assert.match(reader.nativePermissionError ?? '', /metadata is unavailable/);
+    assert.throws(
+      () => cursorPermissionPolicy({ ...reader, permissionMode: 'auto' }),
+      /metadata is unavailable/,
+    );
+  }
 });
 
 test('plugin and worker hooks never block native execution; Claude hooks do not run natively', async () => {

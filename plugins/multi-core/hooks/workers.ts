@@ -82,7 +82,7 @@ type SpawnEvent = AgentSpawnInput;
 const requestedModels = new Map<string, string>();
 
 const providerGuidance =
-  "\n\nFor a multi-* agent type (multi-cursor, multi-openai, ...), `model` names one of that provider's models from the type's description, not a Claude alias; omit it for the provider's default.";
+  "\n\nFor an external provider agent type (multi-openai, multi-zen, multi-cursor, multi-antigravity, multi-grok), `model` names one of that provider's models from the type's description, not a Claude alias; omit it for the provider's default. multi-claude is a native Claude worker; omit model to use its configured Claude model.";
 
 export const register = (on: Parameters<Register>[0], _options: Parameters<Register>[1]) => {
   registerWorkerRows(on);
@@ -240,17 +240,20 @@ async function spawnPayload($: EngineInterface, event: SpawnEvent) {
 /**
  * Resolve a provider worker's model: the one its Agent call named, else the provider's
  * default. An unknown or other provider's model refuses the spawn with the gateway's
- * reason, which names the provider's models. Every other spawn keeps its own model.
+ * reason, which names the provider's models. The generated multi-claude worker also
+ * needs an explicit rewrite: the engine may otherwise inherit a provider parent
+ * despite the worker definition's Claude model. Other agent definitions stay native.
  */
 async function providerSpawn(
   $: EngineInterface,
   event: SpawnEvent,
 ): Promise<{ deny: string } | { event: SpawnEvent; selection: GatewayResponse | undefined }> {
   const provider = isProviderWorker(event.subagentType) && !event.fork;
+  const claude = event.subagentType === 'multi-claude' && !event.fork;
   const named = provider ? (requestedModels.get(event.tool_use_id) ?? event.model) : event.model;
   const payload = { ...(await spawnPayload($, event)), model: named };
   const selection = await postJson(wire($), '/multi/mod/worker-model', payload);
-  if (!provider) {
+  if (!provider && !claude) {
     return { event, selection };
   }
   if (!selection) {
@@ -261,9 +264,27 @@ async function providerSpawn(
   if (selection.refused || !selection.model) {
     return { deny: selection.error ?? `The ${event.subagentType} model was not resolved.` };
   }
+  if (claude && !resolvedNativeClaude(selection)) {
+    return {
+      deny: reportable(
+        'The multi-claude worker requires a known native Claude model; the gateway did not resolve one.',
+      ),
+    };
+  }
   // The task's description is what the running-agents list and its notification show.
   const description = labelled(event.description, selection.model);
   return { event: { ...event, model: selection.model, description }, selection };
+}
+
+/** Full IDs avoid Claude aliases resolving through the external parent's profile. */
+function resolvedNativeClaude(selection: GatewayResponse): boolean {
+  const model = selection.model;
+  return (
+    selection.known === true &&
+    selection.execution === 'claude' &&
+    typeof model === 'string' &&
+    /^claude-[a-zA-Z0-9][a-zA-Z0-9._-]*(?:\[[a-zA-Z0-9]+\])?$/.test(model)
+  );
 }
 
 /** Admit a harness spawn against the current policy generation; undefined admits it. */
@@ -302,6 +323,7 @@ async function admit(
 function nativeClaudeSpawn(event: SpawnEvent, claudeTypeNames: readonly string[]): boolean {
   return (
     claudeTypeNames.includes(event.subagentType) &&
+    (event.subagentType !== 'multi-claude' || Boolean(event.fork)) &&
     !isProviderWorker(event.subagentType) &&
     !isMultiModel(event.model) &&
     !isMultiModel(event.parentModel)

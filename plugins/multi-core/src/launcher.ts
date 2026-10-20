@@ -107,15 +107,14 @@ const WORKER_PROMPT = 'Complete the delegated task.';
  * tool its definition lists). The permission mappers drop that entry: it grants
  * no native capability, and the mod refuses any row the gateway did not issue.
  */
-const CLAUDE_WORKER_TOOLS = ['Read', 'Grep', 'Glob', 'Bash', 'Edit', 'Write'];
-const HARNESS_WORKER_TOOLS = [...CLAUDE_WORKER_TOOLS, DISPLAY_TOOL_SERVER];
+const HARNESS_WORKER_TOOLS = ['Read', 'Grep', 'Glob', 'Bash', 'Edit', 'Write', DISPLAY_TOOL_SERVER];
 
-/** One `--agents` entry: an external worker using Claude Code's native tools. */
+/** One `--agents` entry: a worker using Claude Code's agent lifecycle. */
 interface AgentDefinition {
   description: string;
   prompt: string;
   model: string;
-  tools: string[];
+  tools?: string[];
   effort?: Effort;
 }
 
@@ -209,7 +208,10 @@ async function main() {
   );
   const usageReaders = providerUsageReaders(authFile, zenKey, { cursor, antigravity, grok });
   const workers = workerCatalog(settings.modelPicker.options, grokModels);
-  const agents = workerDefinitions(workers);
+  const agents = workerDefinitions(
+    workers,
+    claudeWorkerModel(anthropic, process.env.MULTI_CLAUDE_MODEL),
+  );
   const modBridge = new ModBridge();
   const settingsDir = await mkdtemp(path.join(os.tmpdir(), 'multi-native-settings-'));
   const callerSettingsFile = path.join(settingsDir, 'caller-settings.json');
@@ -735,11 +737,42 @@ const WORKER_RUNS: Readonly<Record<WorkerProvider, string>> = {
   grok: 'native Grok Build CLI',
 };
 
+// Verified against Claude Code 2.1.304's native catalog on 2026-10-19. Resolve
+// aliases here: in a provider-led session the host can bind a bare Claude alias
+// to that provider's behavior profile. Full IDs keep the worker on Anthropic.
+const NATIVE_CLAUDE_MODELS: Readonly<Record<string, string>> = {
+  sonnet: 'claude-sonnet-5-5',
+  opus: 'claude-opus-5-5',
+  haiku: 'claude-haiku-5-5',
+  fable: 'claude-fable-5-1',
+};
+
+/** A pinned native Claude worker is offered only when Claude reports available auth. */
+export function claudeWorkerModel(signedIn: boolean, configured?: string): string | undefined {
+  if (!signedIn) {
+    return undefined;
+  }
+  const model = configured ?? 'sonnet';
+  if (Object.hasOwn(NATIVE_CLAUDE_MODELS, model)) {
+    return NATIVE_CLAUDE_MODELS[model];
+  }
+  if (!/^claude-[a-zA-Z0-9][a-zA-Z0-9._-]*(?:\[[a-zA-Z0-9]+\])?$/.test(model)) {
+    throw new Error(
+      'MULTI_CLAUDE_MODEL must be sonnet, opus, haiku, fable, or a full claude-* model ID without whitespace; inherit and multi/ models are not native Claude worker models.',
+    );
+  }
+  return model;
+}
+
 /**
  * One Agent type per signed-in provider. The definition's model is the provider's
  * default; an Agent call's `model` selects another, resolved by the mod at spawn.
+ * The optional Claude worker is an ordinary native agent, outside that catalog.
  */
-export function workerDefinitions(catalog: WorkerCatalog): Record<string, AgentDefinition> {
+export function workerDefinitions(
+  catalog: WorkerCatalog,
+  claudeModel?: string,
+): Record<string, AgentDefinition> {
   const agents: Record<string, AgentDefinition> = {};
   for (const worker of Object.values(catalog)) {
     const direct = worker.provider === 'openai' || worker.provider === 'zen';
@@ -751,8 +784,17 @@ export function workerDefinitions(catalog: WorkerCatalog): Record<string, AgentD
       description: workerDescription(worker, WORKER_RUNS[worker.provider]),
       prompt: WORKER_PROMPT,
       model,
-      tools: direct ? CLAUDE_WORKER_TOOLS : HARNESS_WORKER_TOOLS,
+      // Omission inherits Claude Code's effective native child tool pool, including
+      // MCP tools. The host still applies tool filters and permission restrictions.
+      ...(direct ? {} : { tools: HARNESS_WORKER_TOOLS }),
       ...(worker.effort ? { effort: worker.effort as Effort } : {}),
+    };
+  }
+  if (claudeModel) {
+    agents['multi-claude'] = {
+      description: `Native Claude worker (${claudeModel}) using Claude Code's tools. Use for Claude delegation; omit model to use the configured Claude model.`,
+      prompt: WORKER_PROMPT,
+      model: claudeModel,
     };
   }
   return agents;
@@ -1272,7 +1314,11 @@ function warnIfProxyUnused() {
 /** A plugin inventory that cannot be read means no plugin workers, not no session. */
 async function pluginInventoryOrEmpty(cwd: string, args: readonly string[]) {
   try {
-    return await pluginPermissions(cwd, args);
+    const inventory = await pluginPermissions(cwd, args);
+    for (const warning of inventory.warnings ?? []) {
+      process.stderr.write(`Multi: ${warning}\n`);
+    }
+    return inventory;
   } catch (error) {
     process.stderr.write(
       `Multi: could not list Claude plugins (${error instanceof Error ? error.message.split('\n', 1)[0] : String(error)}); plugin-provided workers are unavailable.\n`,

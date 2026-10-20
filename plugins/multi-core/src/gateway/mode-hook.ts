@@ -216,7 +216,7 @@ export class PermissionModes {
       model,
       // Only an explicit mode is stored; an inherited one follows the parent at resolve time.
       permissionMode: definition.permissionMode,
-      nativePermissionError: definition.nativePermissionError,
+      nativePermissionError: definition.nativePermissionError ?? inherited.nativePermissionError,
     });
     return token;
   }

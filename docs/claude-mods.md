@@ -61,9 +61,9 @@ inspected September 22, 2026 (latest `mods/` commit `7974a707` dated September
 The issue's September 9 cheat-sheet image covers v267/v268-era affordances; treat
 it as dated version evidence, not a permanent API promise. Multi's registration code
 records that Claude Code 2.1.272 loads exactly one `hooks.json` module, so all Multi
-hook registrars are composed by `hooks/register.ts`. The engine rewrites
-`.claude-plugin/types/` each time it loads the mod from this checkout (and
-`/plugin-types` writes the same declarations to a directory you name); test the
+hook registrars are composed by `hooks/register.ts`. Interactive plugin loading
+writes `.claude-plugin/types/` beside the root manifest (and `/plugin-types`
+writes the same declarations to a directory you name); test the
 repository's supported Claude Code build when an event or result shape changes.
 
 ### Static rules the engine enforces
@@ -323,9 +323,16 @@ unconsumed policy job is reused for a minute at most, and a policy request may c
 ## Testing the hooks
 
 `npm run test:mod` type-checks the hooks and their tests against the engine's own
-declarations (`.claude-plugin/types/`, written when the mod loads from this checkout;
+declarations (`.claude-plugin/types/`, written during interactive plugin loading;
 `/plugin-types` writes the same files elsewhere) and runs `claude plugin test` with the
-installed Claude executable, without provider inference. Mods are on by default in
+installed Claude executable, without provider inference. On Claude Code 2.1.304,
+`plugin test`, `plugin validate`, and print-mode loading did not generate the
+declarations. Start `claude --plugin-dir "$PWD"` from the repository root and
+exit at the ready prompt to generate them without sending a model request.
+
+Set `MULTI_REAL_CLAUDE` to the absolute Claude executable path when npm's script
+PATH would otherwise select another installed version. This override applies
+to `test:mod` as well as the launcher. Mods are on by default in
 Claude Code 2.1.287, but `claude plugin test` follows the server rollout flag, which is
 served off for some accounts; the script therefore sets
 `CLAUDE_INTERNAL_FC_OVERRIDES={"tengu_plugin_hooks_modules":true}` for that process

@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import {
   checkLauncherArgumentLimit,
+  claudeWorkerModel,
   workerCatalog,
   workerDefinitions,
 } from '../../plugins/multi-core/src/launcher.ts';
@@ -86,6 +87,7 @@ const settings=JSON.parse(fs.readFileSync(args[args.indexOf('--settings')+1],'ut
           CLAUDE_CONFIG_DIR: path.join(cwd, 'claude'),
           CODEX_HOME: cwd,
           TEST_AUTH: auth,
+          MULTI_CLAUDE_MODEL: { api: 'opus' }[auth],
           CLAUDE_CODE_DISABLE_AGENT_VIEW: '0',
           API_TIMEOUT_MS: auth === 'api' ? '1000' : undefined,
           ENABLE_TOOL_SEARCH: auth === 'api' ? 'false' : undefined,
@@ -123,6 +125,11 @@ const settings=JSON.parse(fs.readFileSync(args[args.indexOf('--settings')+1],'ut
       'local hooks authenticate independently of Claude login',
     );
     assert.equal(result.auth, { no: 'local', api: 'api', yes: 'native' }[auth]);
+    const agents = JSON.parse(result.args[result.args.indexOf('--agents') + 1]);
+    assert.equal(
+      agents['multi-claude']?.model,
+      { no: undefined, api: 'claude-opus-5-5', yes: 'claude-sonnet-5-5' }[auth],
+    );
     assert.equal(
       result.settings.hooks.PreToolUse,
       undefined,
@@ -250,6 +257,7 @@ result(JSON.stringify({settings,agents:Object.keys(agents),models:args.filter(x=
         CLAUDE_CONFIG_DIR: path.join(cwd, 'claude'),
         CODEX_HOME: cwd,
         OPENCODE_API_KEY: 'zen-fixture-key',
+        MULTI_ENABLED_PROVIDERS: 'zen',
       },
     },
   );
@@ -315,6 +323,7 @@ result(JSON.stringify({settings,agents:Object.keys(agents),models:args.filter(x=
         CLAUDE_CONFIG_DIR: path.join(cwd, 'claude'),
         CODEX_HOME: cwd,
         OPENCODE_API_KEY: 'zen-fixture-key',
+        MULTI_ENABLED_PROVIDERS: 'zen',
         MULTI_MODELS: selection,
         MULTI_ZEN_MODELS: 'minimax-m2.7,glm-5.2',
       },
@@ -397,6 +406,7 @@ result(JSON.stringify({settings,models:args.filter(x=>x.startsWith('multi/')),ze
       XDG_DATA_HOME: path.join(cwd, 'data'),
       CLAUDE_CONFIG_DIR: path.join(cwd, 'claude'),
       CODEX_HOME: cwd,
+      MULTI_ENABLED_PROVIDERS: 'zen',
       MULTI_ZEN_MODELS: 'glm-5.2,minimax-m2.7',
     },
   });
@@ -601,12 +611,63 @@ test('launcher registers one worker per provider from the picker rows', () => {
     agents['multi-openai'].description,
     "OpenAI worker (Claude Code's tools). Pass model (gpt-6-luna, gpt-6-astra) or omit it for gpt-6-astra.",
   );
-  assert.deepEqual(agents['multi-openai'].tools, ['Read', 'Grep', 'Glob', 'Bash', 'Edit', 'Write']);
-  assert.equal(agents['multi-cursor'].tools.at(-1), 'mcp__multi-core');
-  assert.equal(agents['multi-antigravity'].tools.at(-1), 'mcp__multi-core');
+  // A missing tools field inherits the host's native child pool; [] would disable it.
+  for (const type of ['multi-openai', 'multi-zen']) {
+    assert.equal(Object.hasOwn(agents[type], 'tools'), false);
+    assert.equal(Object.hasOwn(agents[type], 'permissionMode'), false);
+  }
+  for (const type of ['multi-cursor', 'multi-antigravity']) {
+    assert.deepEqual(agents[type].tools, [
+      'Read',
+      'Grep',
+      'Glob',
+      'Bash',
+      'Edit',
+      'Write',
+      'mcp__multi-core',
+    ]);
+  }
   // No type or model name carries an effort or a preset.
   assert(!JSON.stringify(agents).includes('effort=high'));
   assert.deepEqual(workerDefinitions(workerCatalog([])), {});
+});
+
+test('native Claude workers require available auth and a concrete Claude model', () => {
+  assert.equal(claudeWorkerModel(false), undefined);
+  assert.equal(claudeWorkerModel(false, 'opus'), undefined);
+  assert.equal(claudeWorkerModel(true), 'claude-sonnet-5-5');
+  for (const [alias, expected] of [
+    ['sonnet', 'claude-sonnet-5-5'],
+    ['opus', 'claude-opus-5-5'],
+    ['haiku', 'claude-haiku-5-5'],
+    ['fable', 'claude-fable-5-1'],
+  ]) {
+    assert.equal(claudeWorkerModel(true, alias), expected);
+  }
+  for (const model of ['claude-sonnet-4-6', 'claude-opus-4-6[1m]', 'claude-future-model']) {
+    assert.equal(claudeWorkerModel(true, model), model);
+  }
+  for (const model of [
+    '',
+    'inherit',
+    'multi/openai/gpt-6-astra',
+    ' sonnet',
+    'sonnet ',
+    'claude-',
+    'claude-a b',
+    'gpt-6-astra',
+  ]) {
+    assert.throws(() => claudeWorkerModel(true, model), /MULTI_CLAUDE_MODEL must be/);
+  }
+  const providers = workerCatalog([{ model: 'multi/openai/gpt-6-astra' }]);
+  const agents = workerDefinitions(providers, claudeWorkerModel(true, 'opus'));
+  assert.equal(providers['multi-claude'], undefined);
+  assert.equal(agents['multi-claude'].model, 'claude-opus-5-5');
+  assert.match(agents['multi-claude'].description, /Native Claude worker \(claude-opus-5-5\)/);
+  for (const field of ['tools', 'disallowedTools', 'permissionMode', 'effort']) {
+    assert.equal(Object.hasOwn(agents['multi-claude'], field), false);
+  }
+  assert.deepEqual(workerDefinitions({}, claudeWorkerModel(false)), {});
 });
 
 test('launcher argument limits are platform-aware and identify largest providers', () => {

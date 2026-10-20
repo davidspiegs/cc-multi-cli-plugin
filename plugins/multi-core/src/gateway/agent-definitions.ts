@@ -3,7 +3,7 @@ import type { Dirent } from 'node:fs';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { parseDocument } from 'yaml';
+import { isMap, isScalar, parseDocument } from 'yaml';
 import { executableInvocation, resolveExecutable } from './executable.ts';
 
 export interface WorkerPermissions {
@@ -36,6 +36,7 @@ const BUILTIN_WORKERS: Readonly<Record<string, WorkerPermissions>> = {
 export interface PluginPermissionInventory {
   permissions: Record<string, WorkerPermissions>;
   multiCoreEnabled: boolean;
+  warnings?: string[];
 }
 
 export async function loadWorkerPermissions(
@@ -221,6 +222,7 @@ export async function pluginPermissions(
     throw new Error('Invalid Claude plugin inventory');
   }
   const permissions: Record<string, WorkerPermissions> = Object.create(null);
+  const warnings: string[] = [];
   let multiCoreEnabled = false;
   for (const plugin of plugins) {
     if (!plugin.enabled || (plugin.projectPath && !withinProject(cwd, plugin.projectPath))) {
@@ -230,9 +232,23 @@ export async function pluginPermissions(
       throw new Error('Invalid enabled Claude plugin');
     }
     multiCoreEnabled ||= plugin.id === 'multi-core@cc-multi-cli-plugin';
-    Object.assign(permissions, await pluginAgents(plugin.installPath, plugin.id.split('@')[0]));
+    const agents = await pluginAgents(plugin.installPath, plugin.id.split('@')[0]);
+    mergePluginPermissions(permissions, agents.permissions);
+    warnings.push(...agents.warnings);
   }
-  return { permissions, multiCoreEnabled };
+  return { permissions, multiCoreEnabled, warnings };
+}
+
+/** An unreadable definition cannot be cleared by another row with the same identity. */
+function mergePluginPermissions(
+  target: Record<string, WorkerPermissions>,
+  source: Record<string, WorkerPermissions>,
+): void {
+  for (const [name, rules] of Object.entries(source)) {
+    const previous = target[name];
+    const nativePermissionError = previous?.nativePermissionError ?? rules.nativePermissionError;
+    target[name] = nativePermissionError ? { ...previous, ...rules, nativePermissionError } : rules;
+  }
 }
 
 function pluginArguments(args: readonly string[]): string[] {
@@ -261,7 +277,7 @@ function pluginArguments(args: readonly string[]): string[] {
 async function pluginAgents(
   directory: string,
   name: string,
-): Promise<Record<string, WorkerPermissions>> {
+): Promise<{ permissions: Record<string, WorkerPermissions>; warnings: string[] }> {
   let manifest: Record<string, unknown> = {};
   try {
     manifest = JSON.parse(
@@ -276,6 +292,7 @@ async function pluginAgents(
   const configured = manifest.agents ?? ['./agents'];
   const locations = Array.isArray(configured) ? configured : [configured];
   const permissions: Record<string, WorkerPermissions> = Object.create(null);
+  const warnings: string[] = [];
   for (const location of locations) {
     if (typeof location !== 'string' || !location.startsWith('./')) {
       throw new Error(`Unsupported agent path in plugin ${name}`);
@@ -283,35 +300,67 @@ async function pluginAgents(
     const file = path.resolve(directory, location);
     const files = file.endsWith('.md') ? [file] : await agentFiles(file);
     for (const entry of files) {
-      const [agent, rules] = await pluginDefinition(entry);
-      permissions[`${name}:${agent}`] = rules;
+      const definition = await pluginDefinition(entry, name);
+      mergePluginPermissions(permissions, definition.permissions);
+      warnings.push(...definition.warnings);
     }
   }
-  return permissions;
+  return { permissions, warnings };
 }
 
-async function pluginDefinition(file: string): Promise<[string, WorkerPermissions]> {
-  const source = await readFile(file, 'utf8');
-  if (Buffer.byteLength(source) > MAX_AGENT_BYTES) {
-    throw new Error(`Agent definition ${file} exceeds size limit`);
+/** Scalar names from an invalid document are used only to deny, never to infer grants. */
+function pluginAgentNames(contents: unknown, fallback: string): string[] {
+  const names = new Set([fallback]);
+  if (isMap(contents)) {
+    for (const item of contents.items) {
+      if (
+        isScalar(item.key) &&
+        item.key.value === 'name' &&
+        isScalar(item.value) &&
+        typeof item.value.value === 'string'
+      ) {
+        names.add(item.value.value);
+      }
+    }
   }
-  const frontmatter = source.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
-  const document = parseDocument(frontmatter?.[1] ?? '');
-  if (document.errors.length) {
-    throw new Error(`Malformed plugin agent ${file}`);
-  }
-  const definition = document.toJS();
-  const value =
-    definition && typeof definition === 'object' && !Array.isArray(definition) ? definition : {};
-  const name = typeof value.name === 'string' ? value.name : path.basename(file, '.md');
-  // Claude ignores plugin permissionMode, hooks and mcpServers by design.
-  return [
-    name,
-    {
+  return [...names];
+}
+
+async function pluginDefinition(
+  file: string,
+  plugin: string,
+): Promise<{ permissions: Record<string, WorkerPermissions>; warnings: string[] }> {
+  const fallback = path.basename(file, '.md');
+  let names = [fallback];
+  try {
+    const source = await readFile(file, 'utf8');
+    if (Buffer.byteLength(source) > MAX_AGENT_BYTES) {
+      throw new Error('Agent definition exceeds size limit');
+    }
+    const frontmatter = source.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+    const document = parseDocument(frontmatter?.[1] ?? '');
+    names = pluginAgentNames(document.contents, fallback);
+    if (document.errors.length) {
+      throw new Error('Malformed plugin agent');
+    }
+    const definition = document.toJS();
+    const value =
+      definition && typeof definition === 'object' && !Array.isArray(definition) ? definition : {};
+    const name = typeof value.name === 'string' ? value.name : fallback;
+    // Claude ignores plugin permissionMode, hooks and mcpServers by design.
+    const rules = {
       tools: toolList(value.tools, file, 'tools'),
       disallowedTools: toolList(value.disallowedTools, file, 'disallowedTools'),
-    },
-  ];
+    };
+    return { permissions: { [`${plugin}:${name}`]: rules }, warnings: [] };
+  } catch {
+    const identities = names.map((name) => `${plugin}:${name}`);
+    const warning = `Plugin agent permission metadata is unavailable for ${identities.map((name) => JSON.stringify(name)).join(', ')} (${JSON.stringify(file)}); external harness execution is disabled for these identities.`;
+    const permissions = Object.fromEntries(
+      identities.map((name) => [name, { nativePermissionError: warning }]),
+    );
+    return { permissions, warnings: [warning] };
+  }
 }
 
 function isMissingExecutable(error: unknown): boolean {

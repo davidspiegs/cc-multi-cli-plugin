@@ -625,6 +625,17 @@ test('a prompt sent during a run is refused instead of resuming stale history', 
 
 test('terminal cancellation is durable and a new observed prompt can continue in the same gateway', async (t) => {
   const f = await fixture(t);
+  const acquireLease = HarnessSessionStore.prototype.acquireLease;
+  let firstSession: HarnessSession<HarnessSessionBase> | undefined;
+  t.mock.method(
+    HarnessSessionStore.prototype,
+    'acquireLease',
+    async function (this: HarnessSessionStore<HarnessSessionBase>, identity: string) {
+      const lease = await acquireLease.call(this, identity);
+      firstSession ??= lease.session;
+      return lease;
+    },
+  );
   f.hold();
   const first = f.make();
   const abort = new AbortController();
@@ -643,6 +654,9 @@ test('terminal cancellation is durable and a new observed prompt can continue in
   // A genuine terminal result (even a cancelled one) resolves the uncertainty;
   // the session is not left interrupted.
   assert.equal(saved.interrupted, false);
+  // Atomic persistence is visible before the prior turn finishes its cleanup.
+  // A new prompt must wait for that turn to release its in-memory lease too.
+  await until(() => firstSession?.busy === false, 'the cancelled turn to release its lease');
   const next = first.handle(
     { ...body, messages: [{ role: 'user', content: 'new task' }] },
     'main',

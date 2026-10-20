@@ -40,6 +40,10 @@ every adjustable model accepts it, and native-reasoning chat models ignore it.
 Effort is never part of the model name, and the session's `/effort` does not
 change it.
 
+Workers inherit Claude Code's native subagent tools, including available MCP
+tools. Claude Code still applies its subagent tool filters and permission rules;
+custom agents retain their own tool restrictions.
+
 ## Execution
 
 Claude Code executes tools and applies its permission mode. Zen has no independent model-based reviewer. Claude-backed classification remains available when Claude access is present. Zen never borrows OpenAI reviewer capability.

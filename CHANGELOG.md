@@ -6,6 +6,29 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for current direction and
 
 ## Unreleased
 
+- **Keep valid plugin agents when a neighbor has malformed metadata.** The
+  launcher now warns about the affected file and retains the remaining plugin
+  inventory. Unreadable agent permissions block external harness execution for
+  that file's identity and recoverable declared names, without changing Claude
+  Code's own agent execution or editing installed plugin files.
+- **Verify mixed native sessions.** Add an opt-in live check for Claude/GPT
+  delegation in both directions, inherited MCP tools, native permission denial,
+  project instructions, and cross-model disk resume. Document authentication
+  and subscription boundaries in [authentication](docs/authentication.md).
+- **Refresh vulnerable dependencies.** Update Cursor SDK to 1.0.38 and the
+  development TOML parser to 1.9.1; the dependency audit reports no advisories.
+- **Delegate from GPT to native Claude.** Authenticated Claude launches offer
+  a `multi-claude` worker using the native tool loop and inherited permissions.
+  It defaults to Sonnet 5.5; `MULTI_CLAUDE_MODEL` selects a Claude alias or full model
+  ID. Aliases resolve to concrete native IDs before the spawn hook pins the
+  worker, preventing a GPT lead's Sonnet profile from inheriting GPT. Unresolved
+  or foreign selections fail explicitly. See [mixed agents](docs/mixed-agents.md) for both directions and native
+  subagent context limits.
+- **Inherit native tools in direct-model workers.** OpenAI and Zen workers now
+  inherit Claude Code's effective subagent tool pool, including available MCP
+  tools, instead of being limited to Read, Grep, Glob, Bash, Edit, and Write.
+  Host permission rules, subagent tool filters, custom agent restrictions, and
+  external harness worker allowlists remain in force.
 - **Run GPT-6.1 Sol on OpenAI.** Codex now serves `gpt-6.1-sol` on ChatGPT
   plans, so the OpenAI picker row and `model: gpt-6.1-sol` on a `multi-openai`
   worker run it in place of the previous-generation `gpt-6-sol`. The default
