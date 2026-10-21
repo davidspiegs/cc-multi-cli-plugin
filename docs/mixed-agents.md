@@ -18,6 +18,11 @@ independently of the lead's model. If that model is excluded from the configured
 picker, the worker uses its advertised catalog default. Its native tool calls
 run through Claude Code and its final report returns to the lead.
 
+OpenAI workers use maximum (`max`) reasoning effort. The native Agent call
+cannot select an effort per task, so the worker definition fixes it at max.
+The lead's effort remains independent; selecting Opus or changing `/effort`
+does not lower the Astra worker's effort.
+
 Changing the lead with `/model` does not change every worker:
 
 | Worker selection | Model used |

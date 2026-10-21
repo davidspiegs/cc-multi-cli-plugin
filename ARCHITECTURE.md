@@ -69,7 +69,9 @@ spawn to the full id. An unknown id, another provider's model, a Claude alias,
 or an effort-suffixed name (`gpt-6-luna-high`) refuses the spawn, naming the
 provider's available models. Omitting `model` runs the provider default.
 Effort is never part of a type or model name: OpenAI and Zen workers carry one
-provider-wide default effort, while Cursor, Antigravity, and Grok workers apply
+provider-wide default effort (OpenAI `max`, Zen `medium`). The native Agent
+call and `agent.spawn` hook expose no effort override; it belongs to the worker
+definition. Cursor, Antigravity, and Grok workers apply
 the session's `/effort`, validated by the provider.
 
 When Claude authentication is available, the launcher also registers

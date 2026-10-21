@@ -265,10 +265,49 @@ test('a launch command named claude passes nested runs through to the real execu
   const install = await f.install(['--command', 'claude']);
   assert.match(install.stderr, /shadows the plain claude command/);
   assert.equal(JSON.parse((await f.invoke('claude', [])).stdout).providers, 'zen');
+  await writeFile(f.listing, 'broken plugin inventory');
   const nested = JSON.parse(
     (await f.invoke('claude', ['-p', 'hi'], { MULTI_GATEWAY_TOKEN: 'token' })).stdout,
   );
   assert.deepEqual(nested, { native: true, args: ['-p', 'hi'] });
+});
+
+test('native management commands bypass Multi discovery without misclassifying prompts', async (t) => {
+  const f = await fixture(t);
+  await f.install(['--command', 'claude']);
+  await writeFile(f.listing, 'broken plugin inventory');
+  for (const args of [
+    ['--version'],
+    ['--help'],
+    ['auth', 'status', '--json'],
+    ['update'],
+    ['plugin', 'disable', 'multi-openai@cc-multi-cli-plugin'],
+    ['mcp', 'list'],
+    ['doctor'],
+    ['agents'],
+    ['attach', 'existing-session'],
+  ]) {
+    assert.deepEqual(JSON.parse((await f.invoke('claude', args)).stdout), {
+      native: true,
+      args,
+    });
+  }
+  await assert.rejects(f.invoke('claude', ['auth', 'status'], { TEST_EXIT: '7' }), {
+    code: 7,
+  });
+  const root = await core(f.directory, 'core');
+  await writeFile(f.listing, JSON.stringify(plugins(root)));
+  for (const args of [
+    [],
+    ['update the README'],
+    ['--', 'update'],
+    ['-p', 'update'],
+    ['--system-prompt', '--help', 'investigate this'],
+  ]) {
+    const result = JSON.parse((await f.invoke('claude', args)).stdout);
+    assert.equal(result.providers, 'zen');
+    assert.deepEqual(result.args, args);
+  }
 });
 
 test('edited shell blocks and project-only executable cores fail explicitly', async (t) => {

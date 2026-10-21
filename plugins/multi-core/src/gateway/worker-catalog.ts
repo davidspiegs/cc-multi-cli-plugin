@@ -141,7 +141,11 @@ function withoutEffortVariants(models: WorkerModel[] | undefined): WorkerModel[]
 export function workerDescription(worker: ProviderWorker, runs: string): string {
   const shown = worker.models.slice(0, 4).map((entry) => entry.id);
   const more = worker.models.length > shown.length ? ', ...' : '';
-  return `${worker.label} worker (${runs}). Pass model (${shown.join(', ')}${more}) or omit it for ${worker.defaultId}.`;
+  const effort =
+    worker.provider === 'openai' && worker.effort
+      ? ` Runs at ${worker.effort} reasoning effort; effort cannot be selected per task.`
+      : '';
+  return `${worker.label} worker (${runs}). Pass model (${shown.join(', ')}${more}) or omit it for ${worker.defaultId}.${effort}`;
 }
 
 function available(worker: ProviderWorker): string {

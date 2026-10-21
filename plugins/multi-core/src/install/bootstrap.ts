@@ -11,20 +11,59 @@ import {
   withoutGateway,
 } from './process.ts';
 
+// These native CLI commands do not start an attached model session. Keep account,
+// update, plugin repair and other management operations usable even when Multi's
+// plugin inventory or provider authentication is broken. Match only the first
+// argument: prompt text or an option value containing a command is not a command.
+const NATIVE_COMMANDS = new Set([
+  '-h',
+  '--help',
+  '-v',
+  '--version',
+  'agents',
+  'attach',
+  'auth',
+  'auto-mode',
+  'doctor',
+  'gateway',
+  'import',
+  'install',
+  'logs',
+  'mcp',
+  'plugin',
+  'plugins',
+  'purge',
+  'respawn',
+  'rm',
+  'setup-token',
+  'stop',
+  'kill',
+  'ultrareview',
+  'update',
+  'upgrade',
+]);
+
+function plainClaude(state: Installation, args: string[], management: boolean) {
+  return (
+    !management &&
+    (NATIVE_COMMANDS.has(args[0]) ||
+      (state.command === 'claude' && Boolean(process.env.MULTI_GATEWAY_TOKEN)))
+  );
+}
+
 async function dispatch(state: Installation, args: string[], management: boolean) {
+  if (plainClaude(state, args, management)) {
+    // A command named `claude` also catches nested SDK/tool runs. They must reach
+    // the real executable with the caller's original environment, not this
+    // session's gateway URL and credentials. Do this before plugin discovery.
+    return run(state.claude, args, { env: withoutGateway(process.env) });
+  }
   const { root, providers } = await installedPlugins(state.claude, settingsArguments(args));
   if (management && args[0] === 'status') {
     console.log(JSON.stringify({ core: root ?? null, providers, claude: state.claude }, null, 2));
     return 0;
   }
   if (!management && (!root || providers.length === 0)) {
-    return run(state.claude, args, { env: withoutGateway(process.env) });
-  }
-  if (!management && state.command === 'claude' && process.env.MULTI_GATEWAY_TOKEN) {
-    // A launch command named `claude` also catches Claude's own nested runs (agents
-    // calling `claude -p`, SDK spawns, hooks). Inside a Multi session those must
-    // reach the real executable rather than start a second gateway, and without this
-    // session's gateway URL and credentials: that gateway is not theirs.
     return run(state.claude, args, { env: withoutGateway(process.env) });
   }
   if (!root) {

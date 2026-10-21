@@ -6,6 +6,15 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for current direction and
 
 ## Unreleased
 
+- **Keep native management commands usable through the `claude` wrapper.**
+  Login, updates, plugin repair, help and other native subcommands bypass gateway
+  startup and plugin discovery. Nested Claude launches also bypass discovery,
+  while prompts and option values continue through the normal model session.
+- **Use maximum reasoning for OpenAI workers.** `multi-openai` workers now use
+  `max` effort, including the default GPT-6 Astra worker. The lead's effort and
+  other providers remain independent. Native Agent calls have no per-task
+  effort field, so the worker definition supplies this fixed default.
+
 - **Refresh the terminal UI after resizing.** Unix launchers now forward terminal
   resize signals to the attached Claude child, including during startup and
   through the installed wrapper. Detached process groups and cancellation

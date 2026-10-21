@@ -30,10 +30,13 @@ The Agent tool's `multi-openai` type runs any row above: pass `model: <id>`
 (for example `model: gpt-6-luna`) to pick one, or omit `model` to run the
 default, `gpt-6-astra`. An unknown id, another provider's model, or an
 effort-suffixed name such as `gpt-6-luna-high` refuses the spawn, naming the
-available OpenAI models. `multi-openai` runs one provider-wide medium effort;
-effort is never part of the model name, and the session's `/effort` does not
-change it. Workers appear as native subagent entries with model activity,
-elapsed time, progress, and completion status. Cancelling the Claude request
+available OpenAI models. `multi-openai` runs at maximum (`max`) reasoning effort.
+The native Agent call and `agent.spawn` hook do not accept an effort parameter;
+Claude Code applies the worker definition's effort. Per-task effort selection is
+therefore unavailable, and the lead's `/effort` does not change the worker.
+Effort is never part of the model name. Workers appear as native subagent
+entries with model activity, elapsed time, progress, and completion status.
+Cancelling the Claude request
 aborts the OpenAI request and worker activity.
 
 Workers inherit Claude Code's native subagent tools, including available MCP

@@ -752,7 +752,7 @@ test('all registered model and reasoning choices reach OpenAI without substituti
     assert.equal(request.reasoning.effort, effort);
     return new Response(sse(textEvents));
   });
-  assert.equal(OPENAI_WORKER_EFFORT, 'medium');
+  assert.equal(OPENAI_WORKER_EFFORT, 'max');
   for (const slug of ['gpt-6-astra', 'gpt-6.1-sol', 'gpt-5.6-terra', 'gpt-6-luna']) {
     assert(Object.values(MODELS).includes(slug), slug);
     for (const effort of ['low', 'medium', 'high', 'xhigh', 'max']) {

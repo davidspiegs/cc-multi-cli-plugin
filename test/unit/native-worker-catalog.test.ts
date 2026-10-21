@@ -98,7 +98,7 @@ test('no model runs the provider default: the newest or native default, not the 
 });
 
 test('effort is a separate provider-wide field, never a model name', () => {
-  assert.equal(resolveWorker(catalog, 'multi-openai', 'gpt-6-luna').effort, 'medium');
+  assert.equal(resolveWorker(catalog, 'multi-openai', 'gpt-6-luna').effort, 'max');
   assert.equal(resolveWorker(catalog, 'multi-zen', 'kimi-k3').effort, 'medium');
   assert.equal(resolveWorker(catalog, 'multi-cursor', 'composer-2.5').effort, undefined);
   assert.throws(
@@ -115,7 +115,7 @@ test('effort is a separate provider-wide field, never a model name', () => {
     /Effort is not part of a model name: pass model "claude-sonnet-4-6"\./,
   );
   const agents = workerDefinitions(catalog);
-  assert.equal(agents['multi-openai'].effort, 'medium');
+  assert.equal(agents['multi-openai'].effort, 'max');
   assert.equal(agents['multi-antigravity'].effort, undefined);
   assert(Object.keys(agents).every((type) => /^multi-[a-z]+$/.test(type)));
 });

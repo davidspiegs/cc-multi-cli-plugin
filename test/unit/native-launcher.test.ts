@@ -597,7 +597,7 @@ test('launcher registers one worker per provider from the picker rows', () => {
   ]);
   // Each default is the provider's newest or native default, not the first row.
   assert.equal(agents['multi-openai'].model, 'multi/openai/gpt-6-astra');
-  assert.equal(agents['multi-openai'].effort, 'medium');
+  assert.equal(agents['multi-openai'].effort, 'max');
   assert.equal(agents['multi-zen'].model, 'multi/zen/deepseek-v4.1-flash');
   assert.equal(agents['multi-zen'].effort, 'medium');
   assert.equal(agents['multi-cursor'].model, 'multi/cursor/default');
@@ -609,7 +609,7 @@ test('launcher registers one worker per provider from the picker rows', () => {
   );
   assert.equal(
     agents['multi-openai'].description,
-    "OpenAI worker (Claude Code's tools). Pass model (gpt-6-luna, gpt-6-astra) or omit it for gpt-6-astra.",
+    "OpenAI worker (Claude Code's tools). Pass model (gpt-6-luna, gpt-6-astra) or omit it for gpt-6-astra. Runs at max reasoning effort; effort cannot be selected per task.",
   );
   // A missing tools field inherits the host's native child pool; [] would disable it.
   for (const type of ['multi-openai', 'multi-zen']) {
