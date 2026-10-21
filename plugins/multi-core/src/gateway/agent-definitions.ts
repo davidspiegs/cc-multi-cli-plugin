@@ -182,17 +182,20 @@ export async function pluginPermissions(
   options: { platform?: NodeJS.Platform; env?: NodeJS.ProcessEnv; executable?: string } = {},
 ): Promise<PluginPermissionInventory> {
   const environment = options.env ?? process.env;
+  // The installed `claude` wrapper can lead PATH. Inventory probes must call the
+  // same native executable as the launcher, never recursively launch the wrapper.
+  const configuredPath = options.executable ?? environment.MULTI_REAL_CLAUDE;
   let executable: string;
   try {
     executable = resolveExecutable('claude', {
       platform: options.platform,
       env: environment,
-      configuredPath: options.executable,
+      configuredPath,
     });
   } catch (error) {
     // Preserve the old direct execFile contract for mocked probes and let the
     // child process produce its normal ENOENT when Claude is genuinely absent.
-    if (!isMissingExecutable(error) || options.executable) {
+    if (!isMissingExecutable(error) || configuredPath) {
       throw error;
     }
     executable = 'claude';

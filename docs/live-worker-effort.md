@@ -15,6 +15,10 @@ synthetic-project settings so the installed user model default is exercised. It
 does not edit user settings or change saved model defaults. For a different launch
 form, `--command` names the executable and repeated `--command-arg` options supply
 its initial arguments. Model and effort flags in those arguments are rejected.
+When the executable path is absolute, its directory is prepended to the child
+`PATH`, matching the normal installed wrapper environment. An unavailable plugin
+inventory warning fails the test; an absolute invocation must not hide recursive
+wrapper discovery.
 
 The assertions require actual response and gateway evidence:
 

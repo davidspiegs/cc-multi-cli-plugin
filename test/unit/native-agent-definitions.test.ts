@@ -30,6 +30,70 @@ test.beforeEach(() => {
   });
 });
 
+async function executableFixture(t: test.TestContext) {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'plugin-executables-'));
+  t.after(() => removeTemporary(root));
+  const wrapperDirectory = path.join(root, 'multi-bin');
+  const nativeDirectory = path.join(root, 'native-bin');
+  await mkdir(wrapperDirectory);
+  await mkdir(nativeDirectory);
+  const native = path.join(nativeDirectory, 'claude');
+  const override = path.join(root, 'explicit-claude');
+  for (const file of [path.join(wrapperDirectory, 'claude'), native, override]) {
+    await writeFile(file, 'fixture', { mode: 0o755 });
+  }
+  const env = {
+    PATH: [wrapperDirectory, nativeDirectory].join(path.delimiter),
+    MULTI_REAL_CLAUDE: native,
+  };
+  return { root, native, override, env };
+}
+
+test('plugin inventory probes the configured native Claude when its wrapper leads PATH', async (t) => {
+  const fixture = await executableFixture(t);
+  mock.restoreAll();
+  const calls: unknown[][] = [];
+  mock.method(childProcess, 'execFile', (...args: unknown[]) => {
+    calls.push(args);
+    const callback = args.at(-1);
+    if (typeof callback === 'function') {
+      callback(null, '[]', '');
+    }
+  });
+  const settings = ['--setting-sources', 'user,project', '--settings', 'caller.json'];
+  await pluginPermissions(fixture.root, settings, { env: fixture.env });
+  await pluginPermissions(fixture.root, settings, {
+    env: fixture.env,
+    executable: fixture.override,
+  });
+  assert.deepEqual(
+    calls.map((args) => args.slice(0, 2)),
+    [fixture.native, fixture.override].map((command) => [
+      command,
+      [...settings, 'plugin', 'list', '--json'],
+    ]),
+  );
+});
+
+test('missing configured native Claude fails without falling back to its PATH wrapper', async (t) => {
+  const fixture = await executableFixture(t);
+  mock.restoreAll();
+  const probe = mock.method(childProcess, 'execFile', () => {
+    throw new Error('A missing configured executable must not start a probe');
+  });
+  const missing = path.join(fixture.root, 'missing-claude');
+  for (const options of [
+    { env: { ...fixture.env, MULTI_REAL_CLAUDE: missing } },
+    { env: fixture.env, executable: missing },
+  ]) {
+    await assert.rejects(pluginPermissions(fixture.root, [], options), {
+      code: 'ENOENT',
+      message: `Configured executable does not exist: ${missing}`,
+    });
+  }
+  assert.equal(probe.mock.callCount(), 0);
+});
+
 test('loads configured user and nested project definitions in precedence order, then CLI definitions', async (t) => {
   const previousConfig = process.env.CLAUDE_CONFIG_DIR;
   const home = await mkdtemp(path.join(os.tmpdir(), 'agent-home-'));

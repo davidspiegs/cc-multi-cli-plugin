@@ -62,6 +62,10 @@ if (values.help) {
 
 const command = values.command ?? 'claude';
 const commandArgs = values['command-arg'] ?? [];
+// A user invoking the installed command normally has its wrapper directory first
+// in PATH. Preserve that condition so recursive discovery bugs cannot be hidden by
+// this test's absolute executable path and the test runner's unrelated PATH.
+const commandDirectory = path.isAbsolute(command) ? path.dirname(command) : undefined;
 assert(
   !commandArgs.some((arg) => /^--(?:model|effort)(?:=|$)/.test(arg)),
   'Do not inject --model or --effort: this test verifies installed defaults',
@@ -154,6 +158,7 @@ const prompt = `This is an authorized synthetic integration test. Delegate exact
 const report = {
   version: 1,
   command,
+  commandDirectory,
   args,
   nodeVersion: process.version,
   sessionId,
@@ -201,6 +206,9 @@ async function run() {
   const child = spawn(command, args, {
     cwd,
     env: isolatedEnvironment({
+      PATH: commandDirectory
+        ? `${commandDirectory}${path.delimiter}${process.env.PATH ?? ''}`
+        : process.env.PATH,
       HOME: os.homedir(),
       CODEX_HOME: process.env.CODEX_HOME,
       CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR,
@@ -253,6 +261,11 @@ async function run() {
   assert(!timedOut, 'Exceeded three-minute limit');
   assert.equal(code, 0, 'CLI failed; see saved diagnostics');
   assert.doesNotMatch(stderr, /DEP0190/);
+  assert.doesNotMatch(
+    stderr,
+    /plugin-provided workers are unavailable|plugin permission inventory could not be read/i,
+    'Plugin inventory failed under the normal command PATH',
+  );
   report.requests = [...stderr.matchAll(/\[native\] (\{[^\r\n]+\})/g)].map(
     (match) => JSON.parse(match[1]) as Trace,
   );

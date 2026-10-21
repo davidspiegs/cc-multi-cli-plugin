@@ -6,6 +6,9 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for current direction and
 
 ## Unreleased
 
+- **Inspect plugins through the configured native Claude executable.** When the
+  installed command is named `claude`, discovery no longer re-enters the wrapper
+  through PATH when settings flags precede `plugin list`.
 - **Start the installed wrapper without Node module warnings.** Copied runtime
   files now have their own module metadata, independent of the user's home
   package configuration. Setup preserves unrelated metadata and uninstall
