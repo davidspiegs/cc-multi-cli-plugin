@@ -5,19 +5,19 @@
   },
   "metadata": {
     "description": "Choose the model providers to use inside Claude Code.",
-    "version": "0.3.0"
+    "version": "0.3.1"
   },
   "plugins": [
     {
       "name": "multi-core",
       "source": "./",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "description": "Shared Multi gateway, setup, status and reversible Claude startup integration."
     },
     {
       "name": "multi-openai",
       "source": "./plugins/multi-openai",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "description": "ChatGPT models through Codex login"
     },
     {
