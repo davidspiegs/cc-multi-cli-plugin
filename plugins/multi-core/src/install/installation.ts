@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 const begin = '# >>> multi-cli >>>';
 const end = '# <<< multi-cli <<<';
 const files = ['bootstrap.ts', 'installation.ts', 'plugins.ts', 'process.ts'];
+const runtimePackage = `${JSON.stringify({ name: 'cc-multi-cli-runtime', private: true, type: 'module' }, null, 2)}\n`;
 
 type Platform = NodeJS.Platform;
 
@@ -316,7 +317,22 @@ async function writeRuntime(
   command: string,
   staleShims: string[],
 ) {
+  const gatewayDirectory = path.join(directory, '..', 'gateway');
+  const packageFiles = [directory, gatewayDirectory].map((root) => path.join(root, 'package.json'));
+  // Neither copied TypeScript directory should inherit a package type from the
+  // user's home. The sibling gateway directory might already contain other code,
+  // so refuse an unrelated package manifest before changing any runtime files.
+  for (const packageFile of packageFiles) {
+    const current = await optionalText(packageFile);
+    if (current && current !== runtimePackage) {
+      throw new Error(`Multi refuses to overwrite an unrecognized runtime package: ${packageFile}`);
+    }
+  }
   await mkdir(bin, { recursive: true, mode: 0o700 });
+  await mkdir(gatewayDirectory, { recursive: true });
+  for (const packageFile of packageFiles) {
+    await writeFile(packageFile, runtimePackage, { mode: 0o600 });
+  }
   for (const stale of staleShims) {
     await rm(path.join(bin, stale), { force: true });
   }
@@ -327,8 +343,6 @@ async function writeRuntime(
       await copyFile(origin, destination);
     }
   }
-  const gatewayDirectory = path.join(directory, '..', 'gateway');
-  await mkdir(gatewayDirectory, { recursive: true });
   for (const file of ['executable.ts', 'process-tree.ts', 'terminal-resize.ts']) {
     const origin = fileURLToPath(new URL(`../gateway/${file}`, import.meta.url));
     await copyFile(origin, path.join(gatewayDirectory, file));
@@ -339,6 +353,15 @@ async function writeRuntime(
     shims.push(...(await writeShim(bin, node, bootstrap, name, platform)));
   }
   return shims;
+}
+
+async function removeRuntimePackages(directory: string) {
+  for (const relative of ['package.json', '../gateway/package.json']) {
+    const packageFile = path.join(directory, relative);
+    if ((await optionalText(packageFile)) === runtimePackage) {
+      await rm(packageFile);
+    }
+  }
 }
 
 export async function setup(
@@ -465,6 +488,7 @@ export async function uninstall(
   ]) {
     await rm(path.join(directory, file), { force: true });
   }
+  await removeRuntimePackages(directory);
   if (deferred.length) {
     const bin = path.join(directory, 'bin');
     const command = `"ping -n 2 127.0.0.1 >nul & del /f /q ${deferred.map((file) => `"${file}"`).join(' ')} & rmdir "${bin}" & rmdir "${directory}""`;

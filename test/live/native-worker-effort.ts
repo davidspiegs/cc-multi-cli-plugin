@@ -100,9 +100,9 @@ await writeFile(
 await writeFile(
   settings,
   JSON.stringify({
-    // User settings remain active to test the model default. Override any broad
-    // user Bash allow so the synthetic probe cannot execute before failing.
-    permissions: { deny: ['Bash'] },
+    // A full Bash deny removes the tool from Claude's offered toolset. Deny only
+    // this probe, overriding broad user allows while preserving the actual call.
+    permissions: { deny: [`Bash(${deniedCommand})`] },
     hooks: { SubagentStart: [{ hooks: [hook] }] },
   }),
 );
@@ -309,6 +309,16 @@ function verifyWorkerRoute(history: Event[]) {
     assert.equal(request.model, expectedWorker, 'Worker did not use default Astra');
     assert.equal(request.effort, expectedEffort, 'Worker did not send default Max effort');
   }
+  assert(
+    report.requests.some(
+      (trace) =>
+        trace.route === 'openai' &&
+        trace.agentId === report.workerId &&
+        trace.model === expectedWorker &&
+        trace.effort === expectedEffort,
+    ),
+    'Missing successful Astra Max response completion for the native worker',
+  );
 }
 
 async function verifyWorkerTools(history: Event[]) {

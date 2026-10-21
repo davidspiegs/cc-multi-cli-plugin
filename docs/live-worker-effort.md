@@ -32,9 +32,11 @@ The native Agent spawn API does not expose per-task effort. This test checks the
 fixed Max worker default and records that limitation; it does not claim a lower
 effort override works.
 
-The fixture uses `dontAsk`, explicit allowed tools, an explicit Bash deny that
-overrides any user Bash allow, and a strict local MCP config. The denial assertion
-checks the native permission-denial text, not just a generic tool error.
+The fixture uses `dontAsk`, explicit allowed tools, a deny rule for the exact Bash
+probe command that overrides any user Bash allow, and a strict local MCP config.
+The deny is command-scoped because denying the entire Bash tool removes it from
+the native toolset. The denial assertion checks the native permission-denial text,
+not just a generic tool error.
 Only its synthetic workspace is modified by the task. Each run has a three-minute
 timeout, a ten-parent-turn limit and a $1.50 Claude budget. Existing user settings,
 including configured hooks, remain active because the default-model setting is

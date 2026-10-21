@@ -178,6 +178,50 @@ test('setup preserves shell content, is repeatable, and uninstall survives plugi
   assert.equal(JSON.parse((await f.invoke('claude-multi', [])).stdout).native, true);
 });
 
+test('installed runtime has its own module scope beneath a parent package', async (t) => {
+  const f = await fixture(t);
+  await writeFile(path.join(f.home, 'package.json'), '{}\n');
+  await f.install(['--command', 'claude']);
+  const version = await f.invoke('claude', ['--version']);
+  assert.equal(version.stderr, '', 'native commands must not emit module-type warnings');
+  const runtime = path.join(f.home, '.local/share/multi-cli');
+  const gateway = path.join(f.home, '.local/share/gateway');
+  for (const directory of [runtime, gateway]) {
+    assert.deepEqual(JSON.parse(await readFile(path.join(directory, 'package.json'), 'utf8')), {
+      name: 'cc-multi-cli-runtime',
+      private: true,
+      type: 'module',
+    });
+  }
+  // An explicit CommonJS parent also must not change the installed TypeScript's
+  // module format. The sibling helper directory needs its own package scope.
+  await writeFile(path.join(f.home, 'package.json'), '{"type":"commonjs"}\n');
+  assert.equal((await f.invoke('claude', ['--version'])).stderr, '');
+  const helper = await execute(process.execPath, [path.join(gateway, 'terminal-resize.ts')], {
+    env: f.env,
+  });
+  assert.equal(helper.stderr, '');
+  await f.invoke('multi', ['uninstall']);
+  for (const directory of [runtime, gateway]) {
+    await assert.rejects(access(path.join(directory, 'package.json')), /ENOENT/);
+  }
+  assert.equal(await readFile(path.join(f.home, 'package.json'), 'utf8'), '{"type":"commonjs"}\n');
+});
+
+test('installation preserves unrelated sibling runtime package metadata', async (t) => {
+  const f = await fixture(t);
+  const gateway = path.join(f.home, '.local/share/gateway');
+  const packageFile = path.join(gateway, 'package.json');
+  const unrelated = '{"name":"other-gateway","type":"commonjs"}\n';
+  await mkdir(gateway, { recursive: true });
+  await writeFile(packageFile, unrelated);
+  const originalShell = await readFile(f.shell, 'utf8');
+  await assert.rejects(f.install(), /refuses to overwrite an unrecognized runtime package/);
+  assert.equal(await readFile(packageFile, 'utf8'), unrelated);
+  assert.equal(await readFile(f.shell, 'utf8'), originalShell);
+  await assert.rejects(access(path.join(gateway, 'executable.ts')), /ENOENT/);
+});
+
 test('wrapper follows installed core updates and enables only selected providers', async (t) => {
   const f = await fixture(t);
   await f.install();

@@ -6,6 +6,10 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for current direction and
 
 ## Unreleased
 
+- **Start the installed wrapper without Node module warnings.** Copied runtime
+  files now have their own module metadata, independent of the user's home
+  package configuration. Setup preserves unrelated metadata and uninstall
+  removes only manifests created by Multi.
 - **Keep native management commands usable through the `claude` wrapper.**
   Login, updates, plugin repair, help and other native subcommands bypass gateway
   startup and plugin discovery. Nested Claude launches also bypass discovery,
